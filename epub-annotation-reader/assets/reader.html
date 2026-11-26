@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="@@LANG@@">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; base-uri 'none'; form-action 'none'; object-src 'none'">
+<title>@@TITLE@@</title>
+<style>
+/* EPUB CSS */
+/* READER CSS */
+</style>
+</head>
+<body data-theme="paper" data-layout="split">
+<header id="rd-top">
+  <button type="button" id="rd-toc-toggle" aria-controls="rd-toc" aria-expanded="false">目录</button>
+  <div id="rd-heading"><strong id="rd-title">@@TITLE@@</strong><span id="rd-location" aria-live="off"></span></div>
+  <div class="rd-tools">
+    <button type="button" id="rd-mark" title="给当前位置添加书签">书签</button>
+    <button type="button" id="rd-layout" title="切换单栏或原文与批注双栏">双栏</button>
+    <button type="button" id="rd-review-toggle" aria-haspopup="dialog" aria-controls="rd-review">卡片</button>
+    <button type="button" id="rd-notes-toggle" aria-controls="rd-notes" aria-expanded="false">批注</button>
+    <button type="button" id="rd-settings-toggle" aria-controls="rd-settings" aria-expanded="false">外观</button>
+  </div>
+</header>
+<main id="rd-scroll" tabindex="-1">
+  <div id="rd-spread">
+    <article id="rd-book" aria-label="正文">
+<!-- BOOK BODY -->
+    </article>
+    <div id="rd-margin" aria-label="段落旁批注"></div>
+  </div>
+</main>
+<div id="rd-rail" aria-label="全书批注定位"></div>
+<aside id="rd-toc" class="rd-panel" aria-label="目录" hidden>
+  <div class="rd-panel-header"><h2>目录</h2><button type="button" data-close="rd-toc" aria-label="关闭目录">×</button></div>
+  <nav id="rd-toc-list"></nav>
+</aside>
+<aside id="rd-notes" class="rd-panel" aria-label="批注" hidden>
+  <div class="rd-panel-header"><h2>批注 <span id="rd-note-count"></span></h2><button type="button" data-close="rd-notes" aria-label="关闭批注">×</button></div>
+  <div class="rd-filters">
+    <label><span>来源</span><select id="rd-source"><option value="">全部</option><option value="ai">AI</option><option value="me">我的</option></select></label>
+    <label><span>类型</span><select id="rd-type"><option value="">全部</option><option value="highlight">划线</option><option value="note">笔记</option><option value="bookmark">书签</option></select></label>
+    <label><span>颜色</span><select id="rd-color-filter"><option value="">全部</option><option value="yellow">黄</option><option value="green">绿</option><option value="blue">蓝</option><option value="pink">粉</option><option value="purple">紫</option></select></label>
+  </div>
+  <div id="rd-notes-list"></div>
+  <div class="rd-panel-footer">
+    <div id="rd-backup" role="status"></div>
+    <div class="rd-row"><button type="button" id="rd-export">导出 JSON</button><button type="button" id="rd-import">导入 JSON</button><button type="button" id="rd-export-md">导出 Markdown</button></div>
+    <input id="rd-import-file" type="file" accept=".json,application/json" hidden>
+  </div>
+</aside>
+<aside id="rd-settings" class="rd-panel" aria-label="外观设置" hidden>
+  <div class="rd-panel-header"><h2>外观</h2><button type="button" data-close="rd-settings" aria-label="关闭外观">×</button></div>
+  <div class="rd-controls">
+    <fieldset id="rd-theme">
+      <legend>背景主题</legend>
+      <div class="rd-theme-choices">
+        <input type="radio" name="rd-theme" value="paper" aria-label="米黄" title="米黄" checked>
+        <input type="radio" name="rd-theme" value="white" aria-label="白色" title="白色">
+        <input type="radio" name="rd-theme" value="sage" aria-label="护眼绿" title="护眼绿">
+        <input type="radio" name="rd-theme" value="night" aria-label="深色" title="深色">
+      </div>
+    </fieldset>
+    <label>字体<select id="rd-font"><option value="serif">衬线</option><option value="sans">无衬线</option><option value="mono">等宽</option></select></label>
+    <label>字号<input id="rd-size" type="range" min="14" max="32" step="1"><output id="rd-size-value"></output></label>
+    <label>行距<input id="rd-leading" type="range" min="1.35" max="2.45" step=".05"><output id="rd-leading-value"></output></label>
+    <label>正文宽度<input id="rd-width" type="range" min="420" max="900" step="20"><output id="rd-width-value"></output></label>
+    <label class="rd-check"><input id="rd-show-ai" type="checkbox"> 显示 AI 批注</label>
+  </div>
+</aside>
+<div id="rd-selection" role="group" aria-label="选区批注工具" hidden>
+  <div id="rd-swatches"></div>
+  <button type="button" id="rd-new-note">写笔记</button>
+</div>
+<dialog id="rd-review" aria-labelledby="rd-review-title">
+  <header class="rd-review-head">
+    <h2 id="rd-review-title">笔记卡片 <small id="rd-review-count"></small></h2>
+    <button type="button" id="rd-review-close" autofocus>返回正文</button>
+  </header>
+  <div id="rd-review-scroll">
+    <p id="rd-review-status" role="status"></p>
+    <div id="rd-review-grid"></div>
+    <p id="rd-review-empty" hidden>选中正文写下第一条笔记，就能在这里复习。</p>
+    <button type="button" id="rd-review-more" hidden>查看更多卡片</button>
+  </div>
+</dialog>
+<dialog id="rd-editor" aria-labelledby="rd-editor-title">
+  <div class="rd-panel-header"><h2 id="rd-editor-title">笔记</h2><button type="button" id="rd-editor-close" aria-label="关闭">×</button></div>
+  <blockquote id="rd-editor-quote"></blockquote>
+  <label>笔记<textarea id="rd-editor-text" rows="5" placeholder="写下你的想法"></textarea></label>
+  <label>颜色<select id="rd-editor-color"><option value="yellow">黄</option><option value="green">绿</option><option value="blue">蓝</option><option value="pink">粉</option><option value="purple">紫</option></select></label>
+  <div class="rd-editor-actions">
+    <button type="button" id="rd-editor-delete">删除</button>
+    <button type="button" id="rd-editor-save">保存</button>
+  </div>
+</dialog>
+<button type="button" id="rd-return" hidden>返回阅读位置</button>
+<div id="rd-toast" role="status" hidden></div>
+<noscript>启用 JavaScript 后可使用批注、目录和外观设置。</noscript>
+<!-- BOOK DATA -->
+<script>
+/* READER JS */
+</script>
+<!-- BOOK ASSETS -->
+</body>
+</html>
