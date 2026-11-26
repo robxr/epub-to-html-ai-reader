@@ -1,0 +1,4 @@
+interface:
+  display_name: "EPUB 转 HTML · AI 批注阅读器"
+  short_description: "将原生 EPUB 转成带 AI 划线和段旁笔记的离线 HTML，用卡片复习原文。"
+  default_prompt: "使用 $epub-annotation-reader 精读这些 EPUB，逐章标出关键原文、写下解读，为每本书生成一个可离线打开的 HTML 阅读器。"
