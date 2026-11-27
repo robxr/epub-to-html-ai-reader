@@ -259,6 +259,7 @@ class Book:
         self.chapter_keys = {chapter.key: chapter for chapter in self.chapters.values()}
         self.toc = self.finish_toc(toc)
         self.annotations = self.read_existing_annotations()
+        self.study = None
 
     def find_file(self, path):
         if path in self.files:
@@ -469,6 +470,7 @@ class Book:
             "tag": str(item.get("tag") or ""), "color": item.get("color") if item.get("color") in COLORS else "yellow",
             "note": str(item.get("note") or ""), "createdAt": str(item.get("createdAt") or ""),
             "updatedAt": str(item.get("updatedAt") or ""),
+            **{field: item[field].strip() for field in ("claim", "question") if item.get(field)},
             **({"editedByMe": True} if item.get("editedByMe") is True else {}),
         }
 
@@ -481,16 +483,27 @@ class Book:
             raise ValueError("批注 JSON 必须是数组或包含 annotations 数组的对象")
         accepted = []
         rejected = []
+        ids = set()
         for index, item in enumerate(records, 1):
             try:
-                accepted.append(self.validate_note(item))
+                note = self.validate_note(item)
+                if note["id"] in ids:
+                    raise ValueError("同一批注文件中出现重复编号")
+                ids.add(note["id"])
+                accepted.append(note)
             except (ValueError, TypeError) as error:
                 rejected.append({"index": index, "id": item.get("id") if isinstance(item, dict) else None, "reason": str(error)})
+        if isinstance(payload, dict) and "study" in payload:
+            known_ids = {note["id"] for note in self.annotations + accepted}
+            self.study = validate_study(payload["study"], known_ids)
         return accepted, rejected
 
     def validate_note(self, item):
         if not isinstance(item, dict) or item.get("bookId") not in (None, "", self.book_id):
             raise ValueError("批注对象或 bookId 无效")
+        for field in ("claim", "question"):
+            if field in item and not isinstance(item[field], str):
+                raise ValueError(f"{field} 必须是文本")
         quote = item.get("quote")
         quote = quote if isinstance(quote, dict) else {"exact": quote}
         exact = quote.get("exact")
@@ -641,18 +654,65 @@ def safe_declarations(style):
     return ";".join(declarations)
 
 
+def validate_study(study, known_ids):
+    def text_field(obj, name):
+        value = obj.get(name)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"精读路线缺少有效的 {name}")
+        return value.strip()
+
+    def minutes(value):
+        if type(value) is not int or value < 1:
+            raise ValueError("精读路线时长必须是正整数分钟")
+        return value
+
+    if not isinstance(study, dict):
+        raise ValueError("study 必须是精读路线对象")
+    stage = study.get("stage", "full")
+    if stage not in ("preview", "full"):
+        raise ValueError("精读路线 stage 应为 preview 或 full")
+    mode = study.get("mode", "目标精读")
+    preferences = study.get("preferences", "")
+    if not isinstance(mode, str) or not mode.strip() or not isinstance(preferences, str):
+        raise ValueError("精读路线 mode 和 preferences 应为文本")
+    gaps = study.get("gaps", [])
+    if not isinstance(gaps, list) or any(not isinstance(gap, str) or not gap.strip() for gap in gaps):
+        raise ValueError("gaps 应为尚未回答的问题列表")
+    sessions = study.get("sessions", [])
+    if not isinstance(sessions, list) or not (sessions or gaps):
+        raise ValueError("精读路线至少需要一个阅读单元或一个未回答的问题")
+    result = []
+    for number, session in enumerate(sessions, 1):
+        if not isinstance(session, dict):
+            raise ValueError(f"精读单元 {number} 格式无效")
+        ids = session.get("noteIds")
+        if not isinstance(ids, list) or not ids or not all(isinstance(ref, str) for ref in ids):
+            raise ValueError(f"精读单元 {number} 缺少批注编号")
+        missing = [ref for ref in ids if ref not in known_ids]
+        if missing or len(set(ids)) != len(ids):
+            raise ValueError(f"精读单元 {number} 引用了缺失或重复的批注：{', '.join(missing or ids)}")
+        result.append({"title": text_field(session, "title"), "reason": text_field(session, "reason"),
+                       "minutes": minutes(session.get("minutes")), "noteIds": ids})
+    return {"goal": text_field(study, "goal"), "mode": mode.strip(), "stage": stage,
+            "sessionMinutes": minutes(study.get("sessionMinutes", 20)), "sessions": result,
+            "gaps": [gap.strip() for gap in gaps], "preferences": preferences.strip()}
+
+
 def write_html(book, output, extra):
     notes = {note["id"]: note for note in book.annotations}
     notes.update((note["id"], note) for note in extra)
     metadata = {
-        "format": FORMAT, "bookId": book.book_id, "title": book.title, "creator": book.creator,
+        "format": FORMAT, "bookId": book.book_id, "title": book.title, "creator": book.creator, "noteLinks": 1,
         "chapters": [{ "id": c.key, "title": c.title } for c in book.chapters.values()],
         "toc": book.toc, "annotations": list(notes.values()),
     }
+    if book.study:
+        metadata["study"] = book.study
     before, after = (ASSETS / "reader.html").read_text(encoding="utf-8").split("<!-- BOOK BODY -->")
     before = before.replace("@@LANG@@", escape(book.lang)).replace("@@TITLE@@", escape(book.title))
     before = before.replace("/* READER CSS */", (ASSETS / "reader.css").read_text(encoding="utf-8"))
     after = after.replace("/* READER JS */", (ASSETS / "reader.js").read_text(encoding="utf-8"))
+    after = after.replace("/* STUDY JS */", (ASSETS / "study.js").read_text(encoding="utf-8"))
     temp = None
     try:
         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=output.parent, delete=False) as handle:
@@ -686,6 +746,7 @@ def main():
     convert.add_argument("--out-dir", type=Path, required=True)
     convert.add_argument("--annotations", type=Path, help="JSON for one EPUB, or folder of <source stem>.annotations.json")
     convert.add_argument("--overwrite", action="store_true")
+    convert.add_argument("--shelf", action="store_true", help="also create an offline searchable cross-book notebook")
     extract = actions.add_parser("extract", help="list chapters or extract exact paragraph text for annotation")
     extract.add_argument("input", type=Path)
     extract.add_argument("--chapter", help="exact chapter ID or EPUB internal path")
@@ -715,8 +776,12 @@ def main():
     if args.annotations and not args.annotations.is_dir() and len(paths) != 1:
         parser.error("批量转换时，--annotations 应为目录")
     args.out_dir.mkdir(parents=True, exist_ok=True)
+    shelf = args.out_dir / "笔记书架.html"
+    if args.shelf and shelf.exists() and not args.overwrite:
+        parser.error("笔记书架已存在，需要重建时使用 --overwrite")
     counts = Counter(p.stem.casefold() for p in paths)
     failed = False
+    outputs = []
     for path in paths:
         suffix = "-" + digest(str(path), 8) if counts[path.stem.casefold()] > 1 else ""
         output = args.out_dir / (path.stem + suffix + "｜批注阅读器.html")
@@ -734,11 +799,24 @@ def main():
                 count = write_html(book, output, notes)
                 result = {"input": str(path), "output": str(output.resolve()), **book.diagnostics(),
                           "annotations": count, "importedAnnotations": len(notes), "rejectedAnnotations": rejected}
+                if book.study:
+                    result.update(studyStage=book.study["stage"], sessions=len(book.study["sessions"]),
+                                  unanswered=len(book.study["gaps"]))
             failed |= bool(rejected)
+            if not rejected:
+                outputs.append(output)
         except (OSError, ValueError, KeyError, StopIteration, ET.ParseError, BadZipFile, RuntimeError, LookupError) as error:
             failed = True
             result = {"input": str(path), "error": str(error) or "EPUB 结构缺失或无效"}
         print(json.dumps(result, ensure_ascii=False), flush=True)
+    if args.shelf and not failed:
+        from bookshelf import build_shelf
+        try:
+            build_shelf(outputs, shelf, backups=())
+            print(json.dumps({"shelf": str(shelf.resolve()), "books": len(outputs)}, ensure_ascii=False))
+        except (OSError, ValueError) as error:
+            print(json.dumps({"shelfError": str(error)}, ensure_ascii=False))
+            failed = True
     return int(failed)
 
 
