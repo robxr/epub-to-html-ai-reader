@@ -8,6 +8,19 @@
 <style>
 /* EPUB CSS */
 /* READER CSS */
+#rd-study{width:min(670px,calc(100vw - 24px));max-height:86dvh;padding:0;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}
+#rd-study::backdrop{background:#19181175}
+#rd-study header{position:sticky;top:0;background:var(--panel);z-index:1}
+#rd-study-content{padding:0 clamp(14px,4vw,28px) 22px;overflow-wrap:anywhere}
+#rd-study-content h3{font:600 1.25em/1.5 var(--serif);margin:1.1em 0 .35em}
+#rd-study-content p{margin:.45em 0}
+#rd-study-content small,#rd-study-content label{color:var(--muted)}
+#rd-study-content details{margin:.8em 0;border-top:1px solid var(--line);padding-top:.7em}
+#rd-study-content summary{cursor:pointer;font-weight:600}
+#rd-study-content blockquote{margin:.55em 0;padding-inline-start:12px;border-inline-start:2px solid var(--line);font-family:var(--serif)}
+#rd-study-content .rd-study-entry{margin:12px 0 18px}
+#rd-study-content textarea{display:block;margin:.4em 0 .6em;width:100%;padding:.55em;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:6px}
+#rd-study-content .rd-row{flex-wrap:wrap}
 </style>
 </head>
 <body data-theme="paper" data-layout="split">
@@ -15,6 +28,7 @@
   <button type="button" id="rd-toc-toggle" aria-controls="rd-toc" aria-expanded="false">目录</button>
   <div id="rd-heading"><strong id="rd-title">@@TITLE@@</strong><span id="rd-location" aria-live="off"></span></div>
   <div class="rd-tools">
+    <button type="button" id="rd-study-toggle" aria-controls="rd-study" aria-haspopup="dialog" hidden>路线</button>
     <button type="button" id="rd-mark" title="给当前位置添加书签">书签</button>
     <button type="button" id="rd-layout" title="切换单栏或原文与批注双栏">双栏</button>
     <button type="button" id="rd-review-toggle" aria-haspopup="dialog" aria-controls="rd-review">卡片</button>
@@ -72,6 +86,22 @@
   <div id="rd-swatches"></div>
   <button type="button" id="rd-new-note">写笔记</button>
 </div>
+<dialog id="rd-study" aria-labelledby="rd-study-title">
+  <header class="rd-panel-header"><h2 id="rd-study-title">精读路线</h2><button type="button" id="rd-study-close" aria-label="返回正文">×</button></header>
+  <div id="rd-study-content">
+    <h3 id="rd-study-goal"></h3>
+    <small id="rd-study-meta"></small>
+    <div id="rd-study-sessions"></div>
+    <div id="rd-study-gaps"></div>
+    <details id="rd-study-calibrate"><summary>校准阅读偏好</summary>
+      <label for="rd-study-feedback">下一次选段或解读要如何调整？</label>
+      <textarea id="rd-study-feedback" rows="3" placeholder="例如：我已经掌握基础概念，希望多看反例，少选重复观点。"></textarea>
+      <div class="rd-row"><button id="rd-study-export" type="button">导出偏好</button><button id="rd-study-import" type="button">导入偏好</button></div>
+      <input id="rd-study-file" type="file" accept=".json,application/json" hidden>
+      <p id="rd-study-status" role="status">把偏好文件交给 AI 助手，用于完成全书或精读下一本书。</p>
+    </details>
+  </div>
+</dialog>
 <dialog id="rd-review" aria-labelledby="rd-review-title">
   <header class="rd-review-head">
     <h2 id="rd-review-title">笔记卡片 <small id="rd-review-count"></small></h2>
@@ -100,6 +130,9 @@
 <!-- BOOK DATA -->
 <script>
 /* READER JS */
+</script>
+<script>
+/* STUDY JS */
 </script>
 <!-- BOOK ASSETS -->
 </body>

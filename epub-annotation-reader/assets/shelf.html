@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="application-name" content="epub-note-shelf">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>跨书笔记 · 精读书架</title>
+<style>
+:root{color-scheme:light dark;--bg:#f6f4ef;--ink:#282d29;--dim:#566157;--paper:#fffdfa;--line:#d8dcd2;--accent:#285c49;font:16px/1.6 system-ui,sans-serif}
+@media(prefers-color-scheme:dark){:root{--bg:#1d211e;--ink:#e6eae3;--dim:#b5bfb4;--paper:#262b26;--line:#485247;--accent:#a1d6b4}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink)}main{max-width:1080px;padding:32px clamp(16px,4vw,52px);margin:auto}h1,h2,p{margin:.3em 0}h1{font-size:clamp(1.6rem,5vw,2.4rem);letter-spacing:-.03em}h2{font-size:1.2rem}.filters,.actions,.toolbar{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center}.filters{margin:1.25rem 0}.filters input{flex:3 1 18rem;min-width:0}.filters select{max-width:100%;flex:1 1 auto}.toolbar{justify-content:space-between;margin:1rem 0}.meta,#status{color:var(--dim);font-size:.88rem}button,input,select{font:inherit;color:inherit;border:1px solid var(--line);border-radius:.5rem;background:var(--paper);padding:.4rem .7rem}button,a{cursor:pointer}button:disabled{cursor:default;opacity:.65}button[aria-pressed=true]{color:var(--accent);border-color:var(--accent)}a{color:var(--accent);text-underline-offset:.2em}article{background:var(--paper);border:1px solid var(--line);border-radius:.8rem;margin:.65rem 0;padding:1rem;min-width:0;overflow-wrap:anywhere}blockquote{margin:.55rem 0;padding-left:.8rem;border-left:3px solid var(--line);font-family:Georgia,'Songti SC',serif;white-space:pre-wrap}article p{white-space:pre-wrap}.actions{margin-top:.65rem}.pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.6rem}.pair article{margin:0}.compare{padding-bottom:1rem;border-bottom:1px solid var(--line)}.small{font-size:.9rem}.pagination{display:flex;justify-content:center;gap:1rem;margin:1rem}label .label{display:block}.compare:focus{outline:none}[hidden]{display:none!important}@media(max-width:580px){main{padding:1rem}.pair{grid-template-columns:1fr}.filters select{min-width:0}}
+</style>
+</head>
+<body><main>
+<h1>跨书笔记</h1>
+<div class="filters" role="search">
+<input id="query" type="search" aria-label="搜索引文与笔记" placeholder="搜一个概念、引文或笔记">
+<select id="book" aria-label="按书筛选"><option value="">所有书籍</option></select>
+<select id="source" aria-label="按来源筛选"><option value="">全部来源</option><option value="ai">AI 批注</option><option value="me">我的批注</option></select>
+</div>
+<section id="comparison" class="compare" aria-labelledby="compare-title" tabindex="-1" hidden>
+<div class="toolbar"><h2 id="compare-title">对照原文</h2><button id="clear" type="button">清空对照</button></div>
+<div class="pair" id="pair"></div></section>
+<div class="toolbar"><p id="status" role="status"></p></div>
+<div id="results"></div>
+<nav aria-label="检索结果分页" class="pagination" id="pages" hidden><button id="prev" type="button">上一页</button><button id="next" type="button">下一页</button></nav>
+<noscript>请启用 JavaScript 以检索笔记。</noscript>
+</main><script type="application/json" id="index"><!--INDEX--></script>
+<script>
+"use strict";
+const {books,rows}=JSON.parse(document.getElementById("index").textContent);
+const $=id=>document.getElementById(id);
+const types={note:"笔记",highlight:"划线",bookmark:"书签"};
+const perPage=24;
+let page=0,hits=[],selected=[];
+const elem=(tag,text,cls)=>{const node=document.createElement(tag);if(text)node.textContent=text;if(cls)node.className=cls;return node;};
+const normalize=text=>text.normalize("NFKC").toLocaleLowerCase();
+const searchable=rows.map(row=>{
+  const book=books[row.book];
+  return normalize([book.title,book.creator,book.chapters[row.chapter],row.quote,row.claim,row.note,row.tag,row.question].filter(Boolean).join("\n"));
+});
+books.forEach((item,i)=>{const opt=elem("option",item.title);opt.value=i;$("book").append(opt);});
+function href(row) {
+  const book=books[row.book];
+  if(book.noteLinks){
+    const params=new URLSearchParams({note:row.id,p:row.p,q:row.quote,c:row.chapter});
+    if(Number.isInteger(row.start))params.set("s",row.start);
+    return book.href+"#"+params.toString();
+  }
+  // Earlier readers only support native chapter and text-fragment navigation.
+  const quote=row.quote?":~:text="+encodeURIComponent(row.quote).replace(/-/g,"%2D"):"";
+  return book.href+"#"+encodeURIComponent(row.chapter)+quote;
+}
+function card(i,comparing){
+  const row=rows[i],book=books[row.book],node=elem("article");
+  node.append(elem("p",book.title+(book.creator?" · "+book.creator:"")),elem("p",[book.chapters[row.chapter]||"待定位",row.source==="me"?"我的":row.edited?"AI · 已编辑":"AI",row.tag||types[row.type]].filter(Boolean).join(" · "),"meta"));
+  if(row.quote)node.append(elem("blockquote",row.quote));
+  if(row.claim)node.append(elem("p","作者观点 · "+row.claim));
+  if(row.note)node.append(elem("p",(row.source==="me"?"我的笔记":"AI 解读")+" · "+row.note));
+  if(row.question)node.append(elem("p","自测 · "+row.question,"small"));
+  const actions=elem("div",null,"actions small");
+  const link=elem("a",book.noteLinks?"回到原文":"打开原书章节");
+  link.href=href(row);link.target="_blank";link.rel="noopener";
+  const active=selected.includes(i),btn=elem("button",active?"移出对照":"加入对照");
+  btn.type="button";btn.setAttribute("aria-pressed",String(active));btn.disabled=!active&&selected.length===2;
+  btn.onclick=()=>{
+    selected=active?selected.filter(value=>value!==i):[...selected,i];
+    render();
+    const same=document.querySelector((comparing?"#pair ":"#results ")+'button[data-row="'+i+'"]');
+    if(same)same.focus();else if(selected.length)$("comparison").focus();else $("query").focus();
+  };
+  btn.dataset.row=i;actions.append(link,btn);node.append(actions);return node;
+}
+function render(){
+  const start=page*perPage,end=Math.min(start+perPage,hits.length);
+  $("status").textContent=hits.length?books.length+" 本书 · "+hits.length+" 条匹配 · 显示 "+(start+1)+"–"+end:rows.length?"没有匹配的笔记。试试其他关键词或筛选条件。":"这些阅读版还没有批注。可以在书中写笔记，导出 JSON 后更新书架。";
+  $("results").replaceChildren(...hits.slice(start,end).map(i=>card(i,false)));
+  $("comparison").hidden=!selected.length;
+  $("pair").replaceChildren(...selected.map(i=>card(i,true)));
+  $("pages").hidden=hits.length<=perPage;
+  $("prev").disabled=page===0;$("next").disabled=end>=hits.length;
+}
+function search(){
+  const terms=normalize($("query").value.trim()).split(/\s+/u).filter(Boolean);
+  const book=$("book").value,source=$("source").value;hits=[];
+  rows.forEach((row,i)=>{
+    if((!book||String(row.book)===book)&&(!source||source===row.source)&&terms.every(term=>searchable[i].includes(term)))hits.push(i);
+  });
+  page=0;render();
+}
+$("book").onchange=search;$("source").onchange=search;
+let debounce;$("query").oninput=()=>{clearTimeout(debounce);debounce=setTimeout(search,90);};
+$("clear").onclick=()=>{selected=[];render();$("query").focus();};
+function changePage(delta){page+=delta;render();$("status").scrollIntoView({block:"start"});}
+$("next").onclick=()=>changePage(1);$("prev").onclick=()=>changePage(-1);
+search();
+</script></body></html>

@@ -144,3 +144,14 @@ body[data-layout="single"] #rd-margin{display:none}
 #rd-review-status:empty{display:none}
 #rd-review-more{display:block;margin:20px auto 4px}
 @media(max-width:600px){#rd-review{width:calc(100vw - 14px);height:94dvh}.rd-review-head,#rd-review-scroll{padding:14px}}
+.rd-review-head h2{flex:1}
+.rd-detail-label{display:block;font:12px/1.5 var(--chrome);color:var(--muted);margin-bottom:3px}
+.rd-margin-note .rd-detail-label{display:inline;margin-inline-end:.45em}
+#rd-quiz{max-width:620px;margin:clamp(12px,5vh,54px) auto;padding:clamp(18px,4vw,36px);background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow-wrap:anywhere}
+#rd-quiz h3{font:600 clamp(19px,3vw,26px)/1.55 var(--serif);margin:12px 0 22px}
+#rd-quiz h3:focus:not(:focus-visible){outline:none}
+#rd-quiz>small{color:var(--muted)}
+#rd-quiz button{margin:0 6px 5px 0}
+.rd-quiz-answer{white-space:pre-wrap}
+.rd-quiz-answer blockquote{margin:0 0 16px;border-inline-start:2px solid var(--line);padding-inline-start:12px;font-family:var(--serif)}
+.rd-quiz-actions{display:flex;flex-wrap:wrap;gap:4px;margin-top:18px}

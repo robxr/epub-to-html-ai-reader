@@ -30,6 +30,7 @@ try {
 }
 const settings = {...defaults, ...saved.settings};
 const changes = new Map(Object.entries(saved.changes || {}));
+const reviewProgress = new Map(Object.entries(saved.reviewProgress || {}));
 let dirty = !!saved.dirty;
 let reading = saved.reading || null;
 let pending = null;
@@ -75,7 +76,8 @@ function backupStatus() {
 
 function persist() {
   try {
-    localStorage.setItem(key, JSON.stringify({changes: Object.fromEntries(changes), settings, dirty, reading}));
+    localStorage.setItem(key, JSON.stringify({changes: Object.fromEntries(changes),
+      reviewProgress: Object.fromEntries(reviewProgress), settings, dirty, reading}));
     cacheError = false;
   } catch {
     cacheError = true;
@@ -299,6 +301,19 @@ function sourceLabel(note) {
   return note.author === "ai" ? note.editedByMe ? "AI · 已编辑" : "AI" : "我的";
 }
 
+function explanationLabel(note) {
+  return note.author === "ai" ? (note.editedByMe ? "AI 解读 · 已编辑" : "AI 解读") : "我的笔记";
+}
+
+function detailText(tag, label, value) {
+  const item = document.createElement(tag);
+  const heading = document.createElement("small");
+  heading.className = "rd-detail-label";
+  heading.textContent = label;
+  item.append(heading, document.createTextNode(value));
+  return item;
+}
+
 function openNote(note, location = locations.get(note.id)) {
   if (!location) {
     notice("这条批注尚未定位，可在列表里查看或编辑。");
@@ -369,7 +384,10 @@ function refreshNotes() {
     meta.textContent = [sourceLabel(note), kinds[note.type], note.tag].filter(Boolean).join(" · ");
     const label = document.createElement("span");
     label.textContent = noteLabel(note);
-    jumpButton.append(meta, label);
+    jumpButton.append(meta);
+    if (note.claim) jumpButton.append(detailText("span", "作者观点", shortText(note.claim)),
+      detailText("span", explanationLabel(note), noteLabel(note)));
+    else jumpButton.append(label);
     if (note.note && note.quote.exact) {
       const quote = document.createElement("em");
       quote.textContent = shortText(note.quote.exact, 50);
@@ -393,7 +411,9 @@ function refreshNotes() {
       caption.textContent = [sourceLabel(note), kinds[note.type], note.tag].filter(Boolean).join(" · ");
       const title = document.createElement("span");
       title.textContent = noteLabel(note);
-      card.append(caption, title);
+      if (note.claim) card.append(caption, detailText("span", "作者观点", shortText(note.claim)),
+        detailText("span", explanationLabel(note), noteLabel(note)));
+      else card.append(caption, title);
       margin.append(card);
       marginCards.push({card, location});
     }
@@ -424,7 +444,7 @@ let placedCards = 0;
 let columnBottoms = [];
 
 function layoutReviewCards() {
-  if (!$("review").open) return;
+  if (!$("review").open || reviewGrid.hidden) return;
   const width = reviewGrid.clientWidth;
   if (!width) return;
   const gap = 14;
@@ -482,13 +502,18 @@ function appendReviewBatch() {
     meta.textContent = chapter?.title || "待定位";
     const main = document.createElement("strong");
     main.textContent = note.note || note.quote.exact || kinds[note.type];
-    card.append(meta, main);
+    card.append(meta);
+    if (note.claim) {
+      card.append(detailText("strong", "作者观点", note.claim));
+      if (note.note) card.append(detailText("span", explanationLabel(note), note.note));
+    } else card.append(main);
     if (note.note && note.quote.exact) {
       const quote = document.createElement("span");
       quote.className = "rd-review-quote";
       quote.textContent = note.quote.exact;
       card.append(quote);
     }
+    if (note.question) card.append(detailText("span", "自测", note.question));
     const source = document.createElement("small");
     source.className = "rd-review-source";
     source.dataset.color = note.color;
@@ -498,7 +523,101 @@ function appendReviewBatch() {
   }
   reviewGrid.append(fragment);
   layoutReviewCards();
-  $("review-more").hidden = reviewShown === reviewEntries.length;
+  $("review-more").hidden = reviewGrid.hidden || reviewShown === reviewEntries.length;
+}
+
+const quiz = document.createElement("section");
+quiz.id = "rd-quiz";
+quiz.setAttribute("aria-label", "主动复习");
+quiz.hidden = true;
+$("review-scroll").append(quiz);
+const quizToggle = attrButton("考考我", () => {
+  if (quiz.hidden) startQuiz(false);
+  else showCards();
+});
+$("review-close").before(quizToggle);
+
+let quizQuestions = [];
+let quizIndex = 0;
+
+function showCards() {
+  quiz.hidden = true;
+  reviewGrid.hidden = false;
+  quizToggle.textContent = "考考我";
+  $("review-empty").hidden = !!reviewEntries?.length;
+  $("review-more").hidden = reviewShown >= (reviewEntries?.length || 0);
+  layoutReviewCards();
+  $("review-scroll").scrollTop = reviewScrollTop;
+}
+
+function startQuiz(includeMastered) {
+  if (quiz.hidden) reviewScrollTop = $("review-scroll").scrollTop;
+  reviewGrid.hidden = true;
+  $("review-empty").hidden = true;
+  $("review-more").hidden = true;
+  $("review-status").textContent = "";
+  quiz.hidden = false;
+  quizToggle.textContent = "浏览卡片";
+  const questions = reviewEntries.filter(({note}) => note.question?.trim());
+  quizQuestions = questions.filter(({note}) => includeMastered || reviewProgress.get(note.id)?.status !== "mastered")
+    .sort((a, b) => Number(reviewProgress.get(b.note.id)?.status === "again") - Number(reviewProgress.get(a.note.id)?.status === "again"));
+  quizIndex = 0;
+  renderQuestion();
+}
+
+function renderQuestion() {
+  quiz.replaceChildren();
+  $("review-scroll").scrollTop = 0;
+  const title = document.createElement("h3");
+  title.tabIndex = -1;
+  const entry = quizQuestions[quizIndex];
+  if (!entry) {
+    const questions = reviewEntries.filter(({note}) => note.question?.trim());
+    const again = questions.filter(({note}) => reviewProgress.get(note.id)?.status === "again").length;
+    title.textContent = !questions.length ? "还没有自测题" : again ? "本轮复习完成" : "这些题目都已掌握";
+    quiz.append(title);
+    if (!questions.length) {
+      const hint = document.createElement("p");
+      hint.textContent = "可在批注的「编辑」里添加自测题，然后回到这里复习。";
+      quiz.append(hint);
+    } else {
+      if (again) quiz.append(attrButton("再练 " + again + " 题", () => startQuiz(false)));
+      quiz.append(attrButton("重温全部 " + questions.length + " 题", () => startQuiz(true)));
+    }
+    title.focus({preventScroll: true});
+    return;
+  }
+  const {note, location} = entry;
+  const context = document.createElement("small");
+  context.textContent = (quizIndex + 1) + " / " + quizQuestions.length + " · " + (chapterInfo.get(note.chapter)?.title || "待定位");
+  title.textContent = note.question;
+  const reveal = attrButton("查看答案", () => {
+    reveal.remove();
+    const answer = document.createElement("div");
+    answer.className = "rd-quiz-answer";
+    if (note.quote.exact) answer.append(detailText("blockquote", "原文", note.quote.exact));
+    if (note.claim) answer.append(detailText("p", "作者观点", note.claim));
+    if (note.note) answer.append(detailText("p", explanationLabel(note), note.note));
+    const actions = document.createElement("div");
+    actions.className = "rd-quiz-actions";
+    const mark = status => {
+      reviewProgress.set(note.id, {status, updatedAt: new Date().toISOString()});
+      dirty = true;
+      persist();
+      quizIndex++;
+      renderQuestion();
+    };
+    const again = attrButton("再看一次", () => mark("again"));
+    actions.append(again, attrButton("已掌握", () => mark("mastered")));
+    if (location) actions.append(attrButton("查看上下文", () => {
+      $("review").close();
+      openNote(note, location);
+    }));
+    quiz.append(answer, actions);
+    again.focus({preventScroll: true});
+  });
+  quiz.append(context, title, reveal);
+  title.focus({preventScroll: true});
 }
 
 $("review-toggle").onclick = () => {
@@ -522,6 +641,7 @@ $("review-toggle").onclick = () => {
     $("review-empty").hidden = reviewEntries.length > 0;
     appendReviewBatch();
   }
+  showCards();
   $("review").showModal();
   layoutReviewCards();
   $("review-scroll").scrollTop = reviewScrollTop;
@@ -531,7 +651,7 @@ $("review").addEventListener("close", () => {
   $("review-toggle").focus({preventScroll: true});
 });
 $("review-scroll").addEventListener("scroll", () => {
-  if ($("review").open) reviewScrollTop = $("review-scroll").scrollTop;
+  if ($("review").open && quiz.hidden) reviewScrollTop = $("review-scroll").scrollTop;
 }, {passive: true});
 $("review-more").onclick = appendReviewBatch;
 if ("IntersectionObserver" in window) {
@@ -735,12 +855,26 @@ function newNote(location, type, color) {
     position: {start, end}, author: "me", type, tag: "", color, note: "", createdAt: when, updatedAt: when};
 }
 
+const questionLabel = document.createElement("label");
+questionLabel.textContent = "自测题（选填）";
+const questionField = document.createElement("textarea");
+questionField.rows = 2;
+questionField.id = "rd-editor-question";
+questionLabel.append(questionField);
+$("editor-text").closest("label").after(questionLabel);
+const editorClaim = document.createElement("div");
+$("editor-quote").after(editorClaim);
+
 function openEditor(note, isNew = false) {
   editing = {...note};
   $("selection").hidden = true;
   $("editor-title").textContent = isNew ? "写笔记" : "编辑" + kinds[note.type];
   $("editor-quote").textContent = note.quote.exact || "当前位置书签";
   $("editor-text").value = note.note;
+  $("editor-text").closest("label").firstChild.textContent = explanationLabel(note);
+  editorClaim.replaceChildren();
+  if (note.claim) editorClaim.append(detailText("p", "作者观点", note.claim));
+  questionField.value = note.question || "";
   $("editor-color").value = note.color;
   $("editor-delete").hidden = isNew;
   $("editor").showModal();
@@ -753,7 +887,7 @@ $("editor-save").onclick = () => {
   if (!editing) return;
   const note = $("editor-text").value.trim();
   writeNote({...editing, type: editing.type === "bookmark" ? "bookmark" : note ? "note" : "highlight",
-    color: $("editor-color").value, note, updatedAt: new Date().toISOString(),
+    color: $("editor-color").value, note, question: questionField.value.trim(), updatedAt: new Date().toISOString(),
     ...(editing.author === "ai" ? {editedByMe: true} : {})});
   $("editor").close();
 };
@@ -833,8 +967,10 @@ function download(text, extension, mime) {
 
 $("export").onclick = () => {
   const position = positionSnapshot();
-  download(JSON.stringify({format: book.format, bookId: book.bookId, title: book.title, annotations: allNotes(),
-    changes: Object.fromEntries(changes), settings, reading: position, exportedAt: new Date().toISOString()}, null, 2), "json", "application/json");
+  download(JSON.stringify({format: book.format, bookId: book.bookId, title: book.title,
+    creator: book.creator, chapters: book.chapters, annotations: allNotes(),
+    changes: Object.fromEntries(changes), reviewProgress: Object.fromEntries(reviewProgress),
+    settings, reading: position, exportedAt: new Date().toISOString()}, null, 2), "json", "application/json");
   reading = position;
   dirty = false;
   persist();
@@ -848,7 +984,13 @@ $("export-md").onclick = () => {
     lines.push("## " + (chapterInfo.get(note.chapter)?.title || "待定位"),
       [sourceLabel(note), kinds[note.type], note.tag].filter(Boolean).join(" · "), "");
     if (note.quote.exact) lines.push(...note.quote.exact.split("\n").map(line => "> " + line), "");
-    if (note.note) lines.push(note.note, "");
+    if (note.claim) lines.push("**作者观点**", "", note.claim, "");
+    if (note.note) lines.push("**" + explanationLabel(note) + "**", "", note.note, "");
+    if (note.question) {
+      lines.push("**自测**", "", note.question, "");
+      const status = reviewProgress.get(note.id)?.status;
+      if (status) lines.push("复习状态 · " + (status === "mastered" ? "已掌握" : "再看一次"), "");
+    }
   }
   download(lines.join("\n"), "md", "text/markdown;charset=utf-8");
   notice("已导出 Markdown");
@@ -859,7 +1001,8 @@ function validNote(note) {
     && typeof note.chapter === "string" && typeof note.paragraphId === "string"
     && note.quote && ["exact", "prefix", "suffix"].every(field => typeof note.quote[field] === "string")
     && ["ai", "me"].includes(note.author) && Object.hasOwn(kinds, note.type) && Object.hasOwn(palette, note.color)
-    && typeof note.note === "string";
+    && typeof note.note === "string"
+    && [note.claim, note.question].every(value => value == null || typeof value === "string");
 }
 
 function importBackup(data) {
@@ -882,6 +1025,17 @@ function importBackup(data) {
     if (!validNote(note)) { bad++; continue; }
     if (!changes.has(note.id) && !baseline.has(note.id)) {
       changes.set(note.id, {note, updatedAt: typeof note.updatedAt === "string" ? note.updatedAt : ""});
+      recovered++;
+    }
+  }
+  for (const [id, record] of Object.entries(data.reviewProgress || {})) {
+    if (!record || !["again", "mastered"].includes(record.status) || !Number.isFinite(Date.parse(record.updatedAt))) {
+      bad++;
+      continue;
+    }
+    const local = reviewProgress.get(id);
+    if (!local || Date.parse(record.updatedAt) > Date.parse(local.updatedAt)) {
+      reviewProgress.set(id, {status: record.status, updatedAt: record.updatedAt});
       recovered++;
     }
   }
@@ -991,6 +1145,41 @@ refreshNotes();
 backupStatus();
 const opening = reading;
 if (opening) restorePosition(opening);
+
+// Shelf deep links
+function openShelfLink() {
+  const target = new URLSearchParams(window.location.hash.slice(1));
+  const id = target.get("note");
+  if (!id) return;
+  const note = changes.has(id) ? changes.get(id)?.note : baseline.get(id);
+  if (note) {
+    const anchor = locations.get(id) || locate(note);
+    if (anchor) {
+      openNote(note, anchor);
+      return;
+    }
+  }
+  const paragraphId = target.get("p");
+  const chapter = target.get("c");
+  const exact = target.get("q");
+  if (chapter && exact) {
+    const fromBackup = {id, type: "note", paragraphId, chapter, quote: {exact, prefix: "", suffix: ""},
+      position: {start: target.has("s") ? Number(target.get("s")) : null}};
+    const anchor = locate(fromBackup);
+    if (anchor) {
+      openNote(fromBackup, anchor);
+      return;
+    }
+  }
+  const nearby = byId.get(paragraphId)?.element || chapterElements.get(chapter);
+  if (nearby) {
+    rememberReturn();
+    jump(nearby);
+    notice("引文位置有变化，已打开相应段落或章节。");
+  } else notice("此版本未找到这条引文。");
+}
+window.addEventListener("hashchange", openShelfLink);
+openShelfLink();
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", loadImages, {once: true});
 } else {
